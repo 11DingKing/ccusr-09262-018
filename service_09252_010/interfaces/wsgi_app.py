@@ -71,6 +71,11 @@ class Application:
             ("POST", ("tasks",), self._submit_task),
             ("POST", ("tasks", "{task_id}", "run"), self._run_task),
             ("GET", ("tasks", "{task_id}"), self._get_task),
+            ("POST", ("scenarios",), self._create_scenario),
+            ("GET", ("scenarios",), self._list_scenarios),
+            ("GET", ("scenarios", "{report_id}"), self._get_scenario),
+            ("POST", ("scenarios", "{report_id}", "recompute"),
+             self._recompute_scenario),
             ("GET", ("reports",), self._list_reports),
             ("POST", ("reports", "{report_id}", "review"), self._review_report),
             ("POST", ("reports", "{report_id}", "reverify"), self._reverify),
@@ -245,6 +250,34 @@ class Application:
 
     def _get_task(self, p: Principal, body: dict, ctx: Context):
         return 200, ctx.container.calculation.get_task(ctx.match["task_id"])
+
+    # ---- 情景预测 ----
+    def _create_scenario(self, p: Principal, body: dict, ctx: Context):
+        # 缺参由服务层拒绝（422），不落任何半成品
+        result = ctx.container.scenarios.generate(
+            p, project_id=body.get("project_id"),
+            scenario_name=body.get("scenario_name"),
+            history_start=body.get("history_start"),
+            history_end=body.get("history_end"),
+            horizon_months=body.get("horizon_months"),
+            target_caliber=body.get("target_caliber"),
+            assumptions=body.get("assumptions"),
+        )
+        return 201, result
+
+    def _list_scenarios(self, p: Principal, body: dict, ctx: Context):
+        from ..domain.errors import ValidationError
+
+        project_id = ctx.query("project_id")
+        if not project_id:
+            raise ValidationError("列表查询需提供 project_id 查询参数")
+        return 200, {"reports": ctx.container.scenarios.list(p, project_id)}
+
+    def _get_scenario(self, p: Principal, body: dict, ctx: Context):
+        return 200, ctx.container.scenarios.get(p, ctx.match["report_id"])
+
+    def _recompute_scenario(self, p: Principal, body: dict, ctx: Context):
+        return 200, ctx.container.scenarios.recompute(p, ctx.match["report_id"])
 
     # ---- 报告 / 复核 / 导出 ----
     def _list_reports(self, p: Principal, body: dict, ctx: Context):

@@ -188,6 +188,32 @@ class Grant:
 
 
 @dataclass(frozen=True)
+class ScenarioReport:
+    """情景预测报告：在基准数据版本上叠加假设参数外推。
+
+    assumptions 固化生成时的全部假设输入（每度量增长率或固定值）；
+    pins 固化基准数据版本、指标版本与规则版本；二者与结果同时落库，
+    读取时可原样复现当时输入，recompute 严格按固化版本与假设重算。
+    """
+
+    id: str
+    project_id: str
+    scenario_name: str
+    baseline_version_no: int
+    history_start: str
+    history_end: str
+    horizon_months: int
+    target_caliber: str
+    assumptions: dict  # {"measures": {measure: {"growth": f} | {"override": v}}}
+    pins: dict  # {"indicators": {code: ver}, "rules": {rule_key: ver}, "data_version": n}
+    lines: list[dict]
+    input_fingerprint: str
+    result_fingerprint: str
+    created_by: str
+    created_at: str
+
+
+@dataclass(frozen=True)
 class Principal:
     """接口层解析出的调用者。"""
 

@@ -145,6 +145,25 @@ CREATE TABLE IF NOT EXISTS exports (
     exported_at TEXT NOT NULL,
     digest TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS scenario_reports (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    scenario_name TEXT NOT NULL,
+    baseline_version_no INTEGER NOT NULL,
+    history_start TEXT NOT NULL,
+    history_end TEXT NOT NULL,
+    horizon_months INTEGER NOT NULL,
+    target_caliber TEXT NOT NULL,
+    assumptions_json TEXT NOT NULL,
+    pins_json TEXT NOT NULL,
+    lines_json TEXT NOT NULL,
+    input_fingerprint TEXT NOT NULL,
+    result_fingerprint TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scenario_reports_project
+    ON scenario_reports (project_id, created_at);
 """
 
 

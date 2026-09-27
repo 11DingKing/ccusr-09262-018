@@ -15,6 +15,7 @@ from ..domain.models import (
     Report,
     ReportStatus,
     RuleStatus,
+    ScenarioReport,
     TaskStatus,
     ComputationTask,
 )
@@ -462,3 +463,55 @@ class Store:
             (report_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- 情景预测报告 ----
+    def add_scenario_report(self, report: ScenarioReport) -> None:
+        self.conn.execute(
+            "INSERT INTO scenario_reports (id, project_id, scenario_name,"
+            " baseline_version_no, history_start, history_end, horizon_months,"
+            " target_caliber, assumptions_json, pins_json, lines_json,"
+            " input_fingerprint, result_fingerprint, created_by, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (report.id, report.project_id, report.scenario_name,
+             report.baseline_version_no, report.history_start, report.history_end,
+             report.horizon_months, report.target_caliber,
+             json.dumps(report.assumptions, sort_keys=True),
+             json.dumps(report.pins, sort_keys=True),
+             json.dumps(report.lines, sort_keys=True),
+             report.input_fingerprint, report.result_fingerprint,
+             report.created_by, report.created_at),
+        )
+
+    def get_scenario_report(self, report_id: str) -> ScenarioReport | None:
+        row = self.conn.execute(
+            "SELECT * FROM scenario_reports WHERE id = ?", (report_id,)
+        ).fetchone()
+        return self._to_scenario_report(row) if row else None
+
+    def list_scenario_reports(self, project_id: str) -> list[ScenarioReport]:
+        rows = self.conn.execute(
+            "SELECT * FROM scenario_reports WHERE project_id = ?"
+            " ORDER BY created_at",
+            (project_id,),
+        ).fetchall()
+        return [self._to_scenario_report(r) for r in rows]
+
+    @staticmethod
+    def _to_scenario_report(row: sqlite3.Row) -> ScenarioReport:
+        return ScenarioReport(
+            id=row["id"],
+            project_id=row["project_id"],
+            scenario_name=row["scenario_name"],
+            baseline_version_no=row["baseline_version_no"],
+            history_start=row["history_start"],
+            history_end=row["history_end"],
+            horizon_months=row["horizon_months"],
+            target_caliber=row["target_caliber"],
+            assumptions=json.loads(row["assumptions_json"]),
+            pins=json.loads(row["pins_json"]),
+            lines=json.loads(row["lines_json"]),
+            input_fingerprint=row["input_fingerprint"],
+            result_fingerprint=row["result_fingerprint"],
+            created_by=row["created_by"],
+            created_at=row["created_at"],
+        )

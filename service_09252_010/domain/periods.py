@@ -22,6 +22,11 @@ def period_key(period: str) -> int:
     return year * 12 + (month - 1)
 
 
+def period_from_key(key: int) -> str:
+    """把整数期间键还原为 YYYY-MM。"""
+    return f"{key // 12:04d}-{key % 12 + 1:02d}"
+
+
 def iter_periods(start: str, end: str) -> list[str]:
     """生成闭区间 [start, end] 的全部期间，支持跨年。"""
     start_key, end_key = period_key(start), period_key(end)
@@ -30,6 +35,14 @@ def iter_periods(start: str, end: str) -> list[str]:
     periods: list[str] = []
     key = start_key
     while key <= end_key:
-        periods.append(f"{key // 12:04d}-{key % 12 + 1:02d}")
+        periods.append(period_from_key(key))
         key += 1
     return periods
+
+
+def next_periods(period: str, count: int) -> list[str]:
+    """返回 period 之后 count 个期间（不含当月），用于情景预测外推区间。"""
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        raise ValidationError("预测期数必须为正整数")
+    start = period_key(period) + 1
+    return [period_from_key(key) for key in range(start, start + count)]
