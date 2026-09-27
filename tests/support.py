@@ -16,6 +16,7 @@ from service_09252_010.services.export import ExportService
 from service_09252_010.services.imports import ImportService
 from service_09252_010.services.indicators import IndicatorService
 from service_09252_010.services.review import ReviewService
+from service_09252_010.services.scenario import ScenarioService
 
 SUPERVISOR = Principal(institution_id="主管单位", role="supervisor")
 INST_A = Principal(institution_id="机构A", role="officer")
@@ -63,6 +64,7 @@ class Rig:
         self.calculation = CalculationService(self.db, self.clock, self.ids)
         self.review = ReviewService(self.db, self.clock)
         self.exports = ExportService(self.db, self.clock, self.ids)
+        self.scenarios = ScenarioService(self.db, self.clock, self.ids)
 
     def grant(self, institution: str, project: str = PROJECT,
               category: str = "*", permission: str = "view") -> None:

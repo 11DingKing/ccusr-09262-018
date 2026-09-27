@@ -77,6 +77,11 @@ class Application:
             ("POST", ("reports", "{report_id}", "exports"), self._export_report),
             ("GET", ("reports", "{report_id}"), self._get_report),
             ("POST", ("grants",), self._create_grant),
+            ("POST", ("scenario-reports",), self._create_scenario),
+            ("GET", ("scenario-reports",), self._list_scenarios),
+            ("GET", ("scenario-reports", "{scenario_id}"), self._get_scenario),
+            ("POST", ("scenario-reports", "{scenario_id}", "recompute"),
+             self._recompute_scenario),
         ]
 
     def __call__(self, env: dict, start_response) -> list[bytes]:
@@ -272,6 +277,46 @@ class Application:
 
     def _export_report(self, p: Principal, body: dict, ctx: Context):
         return 200, ctx.container.exports.export(p, ctx.match["report_id"])
+
+    # ---- 情景预测报告 ----
+    _SCENARIO_REQUIRED_FIELDS = ("baseline_report_id", "scenario_name", "model",
+                                 "assumptions", "horizon_start", "horizon_end")
+
+    def _create_scenario(self, p: Principal, body: dict, ctx: Context):
+        from ..domain.errors import ValidationError
+
+        # 边界显式拒绝缺参：缺字段返回 422 且不进入服务层，杜绝半成品。
+        missing = [k for k in self._SCENARIO_REQUIRED_FIELDS
+                   if body.get(k) is None]
+        if missing:
+            raise ValidationError(
+                "情景预测参数缺失，拒绝生成", detail={"missing": missing}
+            )
+        result = ctx.container.scenarios.create(
+            p, baseline_report_id=body["baseline_report_id"],
+            scenario_name=body["scenario_name"], model=body["model"],
+            assumptions=body["assumptions"],
+            horizon_start=body["horizon_start"],
+            horizon_end=body["horizon_end"],
+        )
+        return 201, result
+
+    def _list_scenarios(self, p: Principal, body: dict, ctx: Context):
+        from ..domain.errors import ValidationError
+
+        project_id = ctx.query("project_id")
+        if not project_id:
+            raise ValidationError("列表查询需提供 project_id 查询参数")
+        return 200, {"scenario_reports":
+                     ctx.container.scenarios.list_reports(p, project_id)}
+
+    def _get_scenario(self, p: Principal, body: dict, ctx: Context):
+        return 200, ctx.container.scenarios.get(p, ctx.match["scenario_id"])
+
+    def _recompute_scenario(self, p: Principal, body: dict, ctx: Context):
+        return 200, ctx.container.scenarios.recompute(
+            p, ctx.match["scenario_id"]
+        )
 
     # ---- 授权管理 ----
     def _create_grant(self, p: Principal, body: dict, ctx: Context):

@@ -156,5 +156,116 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(status, 403)
 
 
+def _seed_baseline(app) -> str:
+    """登记指标/授权/证据/数据/规则并执行计算，返回基线报告 id。"""
+    call(app, "POST", "/indicators", {
+        "code": "enrollment_total", "name": "招生总数", "category": "招生",
+        "unit": "人",
+        "formula": {"type": "sum", "measure": "enrollment_count"},
+        "missing_policy": "skip",
+    }, SUP)
+    for permission in ("import", "calculate", "view"):
+        call(app, "POST", "/grants", {
+            "institution_id": "机构A", "project_id": "P1",
+            "category": "*", "permission": permission,
+        }, SUP)
+    _, ev = call(app, "POST", "/evidence", {
+        "project_id": "P1", "kind": "年报", "uri": "s3://ev/a.pdf",
+        "sha256": "a" * 64,
+    }, INST_A)
+    call(app, "POST", "/projects/P1/imports", {
+        "records": [
+            {"measure": "enrollment_count", "period": "2024-01",
+             "caliber": "CN-STD", "value": 20, "evidence_id": ev["evidence_id"]},
+            {"measure": "enrollment_count", "period": "2024-02",
+             "caliber": "CN-STD", "value": 20, "evidence_id": ev["evidence_id"]},
+        ],
+    }, INST_A)
+    _, task = call(app, "POST", "/tasks", {
+        "project_id": "P1", "window_start": "2024-01", "window_end": "2024-02",
+        "target_caliber": "CN-STD", "idempotency_key": "base-1",
+    }, INST_A)
+    _, run = call(app, "POST", f"/tasks/{task['task_id']}/run", {}, INST_A)
+    return run["report_id"]
+
+
+class ScenarioHttpTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="svc09252-scn-http-")
+        self.app = make_app(f"{self._tmp.name}/api.db")
+        self.baseline_id = _seed_baseline(self.app)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _payload(self, **overrides) -> dict:
+        payload = {
+            "baseline_report_id": self.baseline_id,
+            "scenario_name": "基准增长", "model": "linear_growth",
+            "assumptions": {"growth_rate": 0.1},
+            "horizon_start": "2024-03", "horizon_end": "2024-04",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_create_persist_recompute_roundtrip(self) -> None:
+        status, body = call(self.app, "POST", "/scenario-reports",
+                            self._payload(), INST_A)
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["calculation_version"], "forecast-1")
+        self.assertEqual(body["assumptions"], {"growth_rate": 0.1})
+        self.assertEqual(body["pins"]["data_version"], 1)
+        # 40 基线 / 2 期 × 2 期 × 1.1 = 44
+        enrollment = next(l for l in body["lines"]
+                          if l["code"] == "enrollment_total")
+        self.assertEqual(enrollment["value"], 44.0)
+
+        status, fetched = call(self.app, "GET",
+                               f"/scenario-reports/{body['scenario_id']}",
+                               headers=INST_A)
+        self.assertEqual(status, 200, fetched)
+        self.assertEqual(fetched["assumptions"], {"growth_rate": 0.1})
+
+        status, check = call(
+            self.app, "POST",
+            f"/scenario-reports/{body['scenario_id']}/recompute", {}, INST_A)
+        self.assertEqual(status, 200, check)
+        self.assertTrue(check["input_match"])
+        self.assertTrue(check["result_match"])
+
+        status, listing = call(
+            self.app, "GET", "/scenario-reports", headers=INST_A, query="project_id=P1")
+        self.assertEqual(status, 200, listing)
+        self.assertEqual(len(listing["scenario_reports"]), 1)
+
+    def test_missing_parameter_rejected_422_and_nothing_persisted(self) -> None:
+        status, body = call(self.app, "POST", "/scenario-reports",
+                            self._payload(assumptions={"other": 1}), INST_A)
+        self.assertEqual(status, 422)
+        self.assertEqual(body["error"], "validation_error")
+        self.assertEqual(body["detail"], {"missing": ["growth_rate"]})
+
+        # 整个缺字段的请求体同样 422
+        status, body = call(self.app, "POST", "/scenario-reports",
+                            self._payload(horizon_start=None), INST_A)
+        self.assertEqual(status, 422)
+        self.assertIn("horizon_start", body["detail"]["missing"])
+
+        status, listing = call(
+            self.app, "GET", "/scenario-reports", headers=SUP, query="project_id=P1")
+        self.assertEqual(listing["scenario_reports"], [])
+
+    def test_unknown_baseline_404(self) -> None:
+        status, body = call(self.app, "POST", "/scenario-reports",
+                            self._payload(baseline_report_id="report-x"), INST_A)
+        self.assertEqual(status, 404)
+        self.assertEqual(body["error"], "not_found")
+
+    def test_forbidden_without_grant(self) -> None:
+        status, _ = call(self.app, "POST", "/scenario-reports",
+                         self._payload(), {"X-Institution-Id": "机构B"})
+        self.assertEqual(status, 403)
+
+
 if __name__ == "__main__":
     unittest.main()

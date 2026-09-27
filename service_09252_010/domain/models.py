@@ -178,6 +178,33 @@ class Report:
 
 
 @dataclass(frozen=True)
+class ScenarioReport:
+    """情景预测报告：基线报告引用 + 假设参数 + 计算版本一并固化。
+
+    assumptions 原样保存生成时的输入；pins 复制基线报告的版本固化
+    （指标/规则/数据版本），baseline_input_fingerprint 冗余保存基线输入指纹，
+    使读取本报告即可复现当时的全部输入。
+    """
+
+    id: str
+    project_id: str
+    scenario_name: str
+    model: str
+    assumptions: dict
+    horizon_start: str
+    horizon_end: str
+    baseline_report_id: str
+    pins: dict
+    baseline_input_fingerprint: str
+    lines: list[dict]
+    input_fingerprint: str  # 对（基线版本+假设+窗口）取指纹
+    result_fingerprint: str  # 对预测行取指纹
+    calculation_version: str  # 引擎版本
+    created_by: str
+    created_at: str
+
+
+@dataclass(frozen=True)
 class Grant:
     """授权粒度：机构 × 项目 × 指标类别 × 权限。"""
 
